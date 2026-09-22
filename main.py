@@ -22,20 +22,28 @@ HAND_CONNECTIONS = [
     (0, 17)
 ]
 
+CLOSED_HAND_VALUE = 0.95
+OPEN_HAND_VALUE = 2.35
+
 def distance(point1, point2):
     return math.sqrt(
         (point1.x - point2.x) ** 2 +
-        (point1.y - point2.y) ** 2
+        (point1.y - point2.y) ** 2 +
+        (point1.z - point2.z) ** 2
     )
 
 def calculate_hand_openness(hand_landmarks):
     wrist = hand_landmarks[0]
+    index_mcp = hand_landmarks[5]
     middle_mcp = hand_landmarks[9]
+    pinky_mcp = hand_landmarks[17]
 
     fingertip_indices = [8, 12, 16, 20]
 
-    # Use palm length as our reference measurement.
-    palm_size = distance(wrist, middle_mcp)
+    palm_length = distance(wrist, middle_mcp)
+    palm_width = distance(index_mcp, pinky_mcp)
+
+    palm_size = (palm_length + palm_width) / 2
 
     distances = []
 
@@ -51,7 +59,14 @@ def calculate_hand_openness(hand_landmarks):
 
     average_distance = sum(distances) / len(distances)
 
-    return average_distance
+    openness = (
+        (average_distance - CLOSED_HAND_VALUE)
+        / (OPEN_HAND_VALUE - CLOSED_HAND_VALUE)
+    )
+
+    openness = max(0.0, min(1.0, openness))
+
+    return openness
 
 def main():
     # Create the MediaPipe Hand Landmarker
@@ -74,6 +89,8 @@ def main():
     camera = cv2.VideoCapture(0)
 
     frame_timestamp = 0
+
+    smoothed_openness = {}
 
     while True:
         success, frame = camera.read()
@@ -106,17 +123,36 @@ def main():
         # Draw every detected landmark.
         for hand_index, hand_landmarks in enumerate(result.hand_landmarks):
 
+            # Calculate the current raw openness.
             openness = calculate_hand_openness(hand_landmarks)
 
-            print(f"Hand {hand_index}: {openness:.2f}")
+            # If this is the first time seeing this hand,
+            # start its smoothed value at the current openness.
+            if hand_index not in smoothed_openness:
+                smoothed_openness[hand_index] = openness
 
-            #Determine left or right hand.
+            # Controls how quickly the value responds.
+            smoothing = 0.15
+
+            # Smooth the current value with the previous value.
+            smoothed_openness[hand_index] = (
+                smoothed_openness[hand_index] * (1 - smoothing)
+                + openness * smoothing
+            )
+
+            smooth_value = smoothed_openness[hand_index]
+
+            # Convert 0.0 - 1.0 into 0 - 100%.
+            percentage = round(smooth_value * 100)
+
+            print(f"Hand {hand_index}: {percentage}%")
+
+            # Determine left or right hand.
             handedness = result.handedness[hand_index][0]
             hand_label = handedness.category_name
 
             # Get wrist position
             wrist = hand_landmarks[0]
-
             wrist_x = int(wrist.x * width)
             wrist_y = int(wrist.y * height)
 
@@ -140,18 +176,6 @@ def main():
                 )
 
             # Draw landmarks
-            for landmark in hand_landmarks:
-                x = int(landmark.x * width)
-                y = int(landmark.y * height)
-
-                cv2.circle(
-                    frame,
-                    (x, y),
-                    5,
-                    (0, 255, 0),
-                    -1
-                )
-
             for landmark in hand_landmarks:
                 x = int(landmark.x * width)
                 y = int(landmark.y * height)
