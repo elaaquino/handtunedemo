@@ -1,6 +1,8 @@
 import cv2
 import mediapipe as mp
 import math
+import sounddevice as sd
+import soundfile as sf
 
 HAND_CONNECTIONS = [
     # Thumb
@@ -22,6 +24,7 @@ HAND_CONNECTIONS = [
     (0, 17)
 ]
 
+MAX_VOLUME = 0.55
 CLOSED_HAND_VALUE = 0.95
 OPEN_HAND_VALUE = 2.35
 
@@ -68,7 +71,47 @@ def calculate_hand_openness(hand_landmarks):
 
     return openness
 
+audio_data = None
+current_frame = 0
+instrumental_volume = 0.0
+
+def audio_callback(outdata, frames, time, status):
+    global current_frame
+
+    if status:
+        print(status)
+
+    end_frame = current_frame + frames
+
+    chunk = audio_data[current_frame:end_frame]
+
+    if len(chunk) < frames:
+        outdata[:] = 0
+        outdata[:len(chunk)] = (
+            chunk * instrumental_volume * MAX_VOLUME
+        )
+
+        raise sd.CallbackStop()
+
+    outdata[:] = (
+        chunk * instrumental_volume * MAX_VOLUME
+    )
+
+    current_frame = end_frame
+
 def main():
+    global audio_data, instrumental_volume
+    global audio_data
+
+    audio_data, sample_rate = sf.read(
+        "audio/Kanye_West_-_Heartless_Instrumental.wav"
+    )
+
+    if len(audio_data.shape) == 1:
+        channels = 1
+    else:
+        channels = audio_data.shape[1]
+
     # Create the MediaPipe Hand Landmarker
     BaseOptions = mp.tasks.BaseOptions
     HandLandmarker = mp.tasks.vision.HandLandmarker
@@ -91,6 +134,14 @@ def main():
     frame_timestamp = 0
 
     smoothed_openness = {}
+
+    audio_stream = sd.OutputStream(
+        samplerate=sample_rate,
+        channels=channels,
+        callback=audio_callback
+    )
+
+    audio_stream.start()
 
     while True:
         success, frame = camera.read()
@@ -123,33 +174,36 @@ def main():
         # Draw every detected landmark.
         for hand_index, hand_landmarks in enumerate(result.hand_landmarks):
 
+            # Determine left or right hand.
+            handedness = result.handedness[hand_index][0]
+            hand_label = handedness.category_name
+
             # Calculate the current raw openness.
             openness = calculate_hand_openness(hand_landmarks)
 
             # If this is the first time seeing this hand,
             # start its smoothed value at the current openness.
-            if hand_index not in smoothed_openness:
-                smoothed_openness[hand_index] = openness
+            if hand_label not in smoothed_openness:
+                smoothed_openness[hand_label] = openness
 
             # Controls how quickly the value responds.
             smoothing = 0.15
 
             # Smooth the current value with the previous value.
-            smoothed_openness[hand_index] = (
-                smoothed_openness[hand_index] * (1 - smoothing)
+            smoothed_openness[hand_label] = (
+                smoothed_openness[hand_label] * (1 - smoothing)
                 + openness * smoothing
             )
 
-            smooth_value = smoothed_openness[hand_index]
+            smooth_value = smoothed_openness[hand_label]
+
+            if hand_label == "Left":
+                instrumental_volume = smooth_value
 
             # Convert 0.0 - 1.0 into 0 - 100%.
             percentage = round(smooth_value * 100)
 
             print(f"Hand {hand_index}: {percentage}%")
-
-            # Determine left or right hand.
-            handedness = result.handedness[hand_index][0]
-            hand_label = handedness.category_name
 
             # Get wrist position
             wrist = hand_landmarks[0]
@@ -196,6 +250,10 @@ def main():
 
     camera.release()
     cv2.destroyAllWindows()
+
+    audio_stream.stop()
+    audio_stream.close()
+
     landmarker.close()
 
 
