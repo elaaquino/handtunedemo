@@ -73,7 +73,9 @@ def calculate_hand_openness(hand_landmarks):
 
 audio_data = None
 current_frame = 0
+
 instrumental_volume = 0.0
+autotune_strength = 0.0
 
 def audio_callback(outdata, frames, time, status):
     global current_frame
@@ -100,7 +102,7 @@ def audio_callback(outdata, frames, time, status):
     current_frame = end_frame
 
 def main():
-    global audio_data, instrumental_volume
+    global audio_data, instrumental_volume, autotune_strength
     global audio_data
 
     audio_data, sample_rate = sf.read(
@@ -199,6 +201,14 @@ def main():
 
             if hand_label == "Left":
                 instrumental_volume = smooth_value
+
+            elif hand_label == "Right":
+                autotune_strength = smooth_value
+
+            print(
+                f"Instrumental: {round(instrumental_volume * 100)}% | "
+                f"Autotune: {round(autotune_strength * 100)}%"
+            )
 
             # Convert 0.0 - 1.0 into 0 - 100%.
             percentage = round(smooth_value * 100)
