@@ -2,7 +2,6 @@ import sounddevice as sd
 import aubio
 import numpy as np
 
-
 INPUT_DEVICE = 1
 OUTPUT_DEVICE = 5
 
@@ -11,7 +10,6 @@ CHANNELS = 1
 
 BUFFER_SIZE = 2048
 HOP_SIZE = 512
-
 
 # Create the pitch detector.
 pitch_detector = aubio.pitch(
@@ -58,10 +56,10 @@ def audio_callback(indata, outdata, frames, time, status):
     if status:
         print(status)
 
-    # Continue sending microphone audio to headphones.
+    # Send the microphone directly to the headphones.
     outdata[:] = indata
 
-    # Convert microphone data into the format aubio expects.
+    # Give the original microphone audio to aubio.
     audio_samples = indata[:, 0].astype(np.float32)
 
     # Detect the pitch.

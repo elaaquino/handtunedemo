@@ -3,6 +3,7 @@ import mediapipe as mp
 import math
 import sounddevice as sd
 import soundfile as sf
+import mido
 
 HAND_CONNECTIONS = [
     # Thumb
@@ -105,6 +106,21 @@ def main():
     global audio_data, instrumental_volume, autotune_strength
     global audio_data
 
+    midi_port_name = None
+
+    for name in mido.get_output_names():
+        if "HandTune MIDI" in name:
+            midi_port_name = name
+            break
+
+    if midi_port_name is None:
+        print("Could not find HandTune MIDI.")
+        return
+
+    midi_port = mido.open_output(midi_port_name)
+
+    print(f"Connected to MIDI: {midi_port_name}")
+
     audio_data, sample_rate = sf.read(
         "audio/Kanye_West_-_Heartless_Instrumental.wav"
     )
@@ -205,6 +221,17 @@ def main():
             elif hand_label == "Right":
                 autotune_strength = smooth_value
 
+                midi_value = round(autotune_strength * 127)
+
+                message = mido.Message(
+                    "control_change",
+                    channel=0,
+                    control=20,
+                    value=midi_value
+                )
+
+                midi_port.send(message)
+
             print(
                 f"Instrumental: {round(instrumental_volume * 100)}% | "
                 f"Autotune: {round(autotune_strength * 100)}%"
@@ -263,6 +290,8 @@ def main():
 
     audio_stream.stop()
     audio_stream.close()
+
+    midi_port.close()
 
     landmarker.close()
 
