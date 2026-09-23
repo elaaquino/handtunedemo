@@ -4,6 +4,7 @@ import math
 import sounddevice as sd
 import soundfile as sf
 import mido
+import time
 
 HAND_CONNECTIONS = [
     # Thumb
@@ -153,6 +154,15 @@ def main():
 
     smoothed_openness = {}
 
+    last_seen = {
+        "Left": time.time(),
+        "Right": time.time()
+    }
+
+    HAND_TIMEOUT = 0.4
+
+    last_midi_value = None
+
     audio_stream = sd.OutputStream(
         samplerate=sample_rate,
         channels=channels,
@@ -195,6 +205,7 @@ def main():
             # Determine left or right hand.
             handedness = result.handedness[hand_index][0]
             hand_label = handedness.category_name
+            last_seen[hand_label] = time.time()
 
             # Calculate the current raw openness.
             openness = calculate_hand_openness(hand_landmarks)
@@ -223,14 +234,16 @@ def main():
 
                 midi_value = round(autotune_strength * 127)
 
-                message = mido.Message(
-                    "control_change",
-                    channel=0,
-                    control=20,
-                    value=midi_value
-                )
+                if midi_value != last_midi_value:
+                    message = mido.Message(
+                        "control_change",
+                        channel=0,
+                        control=20,
+                        value=midi_value
+                    )
 
-                midi_port.send(message)
+                    midi_port.send(message)
+                    last_midi_value = midi_value
 
             print(
                 f"Instrumental: {round(instrumental_volume * 100)}% | "
@@ -278,6 +291,34 @@ def main():
                     (0, 255, 0),
                     -1
                 )
+
+        current_time = time.time()
+
+        if current_time - last_seen["Left"] > HAND_TIMEOUT:
+            instrumental_volume *= 0.9
+
+            if instrumental_volume < 0.01:
+                instrumental_volume = 0.0
+
+
+        if current_time - last_seen["Right"] > HAND_TIMEOUT:
+            autotune_strength *= 0.9
+
+            if autotune_strength < 0.01:
+                autotune_strength = 0.0
+
+            midi_value = round(autotune_strength * 127)
+
+            if midi_value != last_midi_value:
+                message = mido.Message(
+                    "control_change",
+                    channel=0,
+                    control=20,
+                    value=midi_value
+                )
+
+                midi_port.send(message)
+                last_midi_value = midi_value
 
         cv2.imshow("HandTune", frame)
 
