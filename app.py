@@ -1,4 +1,5 @@
 import sys
+from unittest import result
 
 import cv2
 import mediapipe as mp
@@ -19,6 +20,9 @@ from PySide6.QtWidgets import (
     QProgressBar
 )
 
+from main import CLOSED_HAND_VALUE
+from main import OPEN_HAND_VALUE
+
 HAND_CONNECTIONS = [
     # Thumb
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -38,6 +42,49 @@ HAND_CONNECTIONS = [
     # Palm
     (0, 17)
 ]
+
+def distance(point1, point2):
+    return math.sqrt(
+        (point1.x - point2.x) ** 2 +
+        (point1.y - point2.y) ** 2 +
+        (point1.z - point2.z) ** 2
+    )
+
+def calculate_hand_openness(hand_landmarks):
+    wrist = hand_landmarks[0]
+    index_mcp = hand_landmarks[5]
+    middle_mcp = hand_landmarks[9]
+    pinky_mcp = hand_landmarks[17]
+
+    fingertip_indices = [8, 12, 16, 20]
+
+    palm_length = distance(wrist, middle_mcp)
+    palm_width = distance(index_mcp, pinky_mcp)
+
+    palm_size = (palm_length + palm_width) / 2
+
+    distances = []
+
+    for tip_index in fingertip_indices:
+        fingertip = hand_landmarks[tip_index]
+
+        fingertip_distance = distance(wrist, fingertip)
+
+        # Normalize the fingertip distance based on hand size.
+        normalized_distance = fingertip_distance / palm_size
+
+        distances.append(normalized_distance)
+
+    average_distance = sum(distances) / len(distances)
+
+    openness = (
+        (average_distance - CLOSED_HAND_VALUE)
+        / (OPEN_HAND_VALUE - CLOSED_HAND_VALUE)
+    )
+
+    openness = max(0.0, min(1.0, openness))
+
+    return openness
 
 class HandTuneWindow(QMainWindow):
 
@@ -138,7 +185,33 @@ class HandTuneWindow(QMainWindow):
         # Camera
         # -------------------------
 
+        BaseOptions = mp.tasks.BaseOptions
+        HandLandmarker = mp.tasks.vision.HandLandmarker
+        HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+        VisionRunningMode = mp.tasks.vision.RunningMode
+
+        options = HandLandmarkerOptions(
+            base_options=BaseOptions(
+                model_asset_path="models/hand_landmarker.task"
+            ),
+            running_mode=VisionRunningMode.VIDEO,
+            num_hands=2
+        )
+
+        self.landmarker = HandLandmarker.create_from_options(options)
+
+        self.frame_timestamp = 0
+
+        self.smoothed_openness = {}
+
+        self.last_seen = {
+            "Left": time.time(),
+            "Right": time.time()
+        }
+
         self.camera = cv2.VideoCapture(0)
+
+        self.debug_frame_count = 0
 
         self.camera_timer = QTimer()
         self.camera_timer.timeout.connect(self.update_camera)
@@ -150,15 +223,83 @@ class HandTuneWindow(QMainWindow):
         if not success:
             return
 
-        # OpenCV uses BGR.
-        # Qt expects RGB.
+        # Convert camera frame for MediaPipe
+        rgb_for_mediapipe = cv2.cvtColor(
+            frame,
+            cv2.COLOR_BGR2RGB
+        )
+
+        mp_image = mp.Image(
+            image_format=mp.ImageFormat.SRGB,
+            data=rgb_for_mediapipe
+        )
+
+        result = self.landmarker.detect_for_video(
+            mp_image,
+            self.frame_timestamp
+        )
+
+        self.frame_timestamp += 33
+
+        height, width, _ = frame.shape
+
+        # Process and draw any detected hands
+        for hand_index, hand_landmarks in enumerate(
+            result.hand_landmarks
+        ):
+            handedness = result.handedness[hand_index][0]
+            hand_label = handedness.category_name
+
+            self.last_seen[hand_label] = time.time()
+
+            # Draw connections
+            for start_index, end_index in HAND_CONNECTIONS:
+                start = hand_landmarks[start_index]
+                end = hand_landmarks[end_index]
+
+                start_point = (
+                    int(start.x * width),
+                    int(start.y * height)
+                )
+
+                end_point = (
+                    int(end.x * width),
+                    int(end.y * height)
+                )
+
+                cv2.line(
+                    frame,
+                    start_point,
+                    end_point,
+                    (255, 255, 255),
+                    2
+                )
+
+            # Draw landmarks
+            for landmark in hand_landmarks:
+                x = int(landmark.x * width)
+                y = int(landmark.y * height)
+
+                cv2.circle(
+                    frame,
+                    (x, y),
+                    5,
+                    (0, 255, 0),
+                    -1
+                )
+
+        # -------------------------
+        # Display frame in Qt
+        # -------------------------
+        # IMPORTANT: this is OUTSIDE the hand loop.
+        # The camera therefore updates even when no hands are detected.
+
         rgb_frame = cv2.cvtColor(
             frame,
             cv2.COLOR_BGR2RGB
         )
 
         height, width, channels = rgb_frame.shape
-
         bytes_per_line = channels * width
 
         qt_image = QImage(
@@ -179,13 +320,15 @@ class HandTuneWindow(QMainWindow):
 
         self.camera_label.setPixmap(pixmap)
 
-        def closeEvent(self, event):
-            self.camera_timer.stop()
+    def closeEvent(self, event):
+        self.camera_timer.stop()
 
-            if self.camera.isOpened():
-                self.camera.release()
+        if self.camera.isOpened():
+            self.camera.release()
 
-            event.accept()
+        self.landmarker.close()
+
+        event.accept()
 
 
 def main():
