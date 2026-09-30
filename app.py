@@ -7,6 +7,10 @@ import math
 import time
 import mido
 
+import soundfile as sf
+import sounddevice as sd
+import numpy as np
+
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
 
@@ -220,6 +224,18 @@ class HandTuneWindow(QMainWindow):
         self.debug_frame_count = 0
 
         # -------------------------
+        # Audio
+        # -------------------------
+
+        self.audio_data = None
+        self.sample_rate = None
+        self.audio_position = 0
+
+        self.instrumental_volume = 0.0
+
+        self.audio_stream = None
+
+        # -------------------------
         # MIDI
         # -------------------------
 
@@ -289,6 +305,8 @@ class HandTuneWindow(QMainWindow):
             smooth_value = self.smoothed_openness[hand_label]
 
             if hand_label == "Left":
+                self.instrumental_volume = smooth_value * 0.55
+
                 self.instrumental_bar.setValue(
                     round(smooth_value * 100)
                 )
@@ -364,6 +382,10 @@ class HandTuneWindow(QMainWindow):
 
             self.instrumental_bar.setValue(new_value)
 
+            self.instrumental_volume = (
+                new_value / 100
+            ) * 0.55
+
 
         if current_time - self.last_seen["Right"] > 0.4:
             current_value = self.autotune_bar.value()
@@ -434,11 +456,76 @@ class HandTuneWindow(QMainWindow):
         if not file_path:
             return
 
-        print(f"Selected song: {file_path}")
+        try:
+            # Stop previous song if necessary
+            if self.audio_stream is not None:
+                self.audio_stream.stop()
+                self.audio_stream.close()
+                self.audio_stream = None
 
-        file_name = file_path.split("/")[-1]
+            # Load selected song
+            self.audio_data, self.sample_rate = sf.read(
+                file_path,
+                dtype="float32",
+                always_2d=True
+            )
 
-        self.song_name.setText(file_name)
+            self.audio_position = 0
+
+            # Display filename
+            file_name = file_path.split("/")[-1]
+            self.song_name.setText(file_name)
+
+            print(f"Loaded song: {file_name}")
+
+            self.start_audio()
+
+        except Exception as error:
+            print(f"Could not load song: {error}")
+
+    def start_audio(self):
+            if self.audio_data is None:
+                return
+    
+            channels = self.audio_data.shape[1]
+    
+            self.audio_stream = sd.OutputStream(
+                samplerate=self.sample_rate,
+                channels=channels,
+                dtype="float32",
+                callback=self.audio_callback
+            )
+    
+            self.audio_stream.start()
+
+    def audio_callback(self, outdata, frames, time_info, status):
+        if status:
+            print(status)
+
+        if self.audio_data is None:
+            outdata.fill(0)
+            return
+
+        start = self.audio_position
+        end = start + frames
+
+        chunk = self.audio_data[start:end]
+
+        # Clear output first
+        outdata.fill(0)
+
+        available_frames = len(chunk)
+
+        if available_frames > 0:
+            outdata[:available_frames] = (
+                chunk * self.instrumental_volume
+            )
+
+        self.audio_position += available_frames
+
+        # Song finished
+        if self.audio_position >= len(self.audio_data):
+            self.audio_position = len(self.audio_data)
 
     def closeEvent(self, event):
         self.camera_timer.stop()
@@ -450,6 +537,10 @@ class HandTuneWindow(QMainWindow):
 
         if self.midi_port is not None:
             self.midi_port.close()
+
+        if self.audio_stream is not None:
+            self.audio_stream.stop()
+            self.audio_stream.close()
 
         event.accept()
 
