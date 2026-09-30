@@ -5,6 +5,7 @@ import cv2
 import mediapipe as mp
 import math
 import time
+import mido
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QImage, QPixmap
@@ -17,7 +18,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QProgressBar
+    QProgressBar,
+    QFileDialog
 )
 
 from main import CLOSED_HAND_VALUE
@@ -145,6 +147,10 @@ class HandTuneWindow(QMainWindow):
 
         self.choose_song_button = QPushButton("Choose Song")
 
+        self.choose_song_button.clicked.connect(
+            self.choose_song
+        )
+
         controls_section.addWidget(now_playing_label)
         controls_section.addWidget(self.song_name)
         controls_section.addWidget(self.choose_song_button)
@@ -213,6 +219,22 @@ class HandTuneWindow(QMainWindow):
 
         self.debug_frame_count = 0
 
+        # -------------------------
+        # MIDI
+        # -------------------------
+
+        self.midi_port = None
+        self.last_midi_value = None
+
+        for name in mido.get_output_names():
+            if "HandTune MIDI" in name:
+                self.midi_port = mido.open_output(name)
+                print(f"Connected to MIDI: {name}")
+                break
+
+        if self.midi_port is None:
+            print("HandTune MIDI not found.")
+        
         self.camera_timer = QTimer()
         self.camera_timer.timeout.connect(self.update_camera)
         self.camera_timer.start(30)
@@ -272,9 +294,27 @@ class HandTuneWindow(QMainWindow):
                 )
 
             elif hand_label == "Right":
+                autotune_percent = round(smooth_value * 100)
+
                 self.autotune_bar.setValue(
-                    round(smooth_value * 100)
+                    autotune_percent
                 )
+
+                midi_value = round(smooth_value * 127)
+
+                if (
+                    self.midi_port is not None
+                    and midi_value != self.last_midi_value
+                ):
+                    message = mido.Message(
+                        "control_change",
+                        channel=0,
+                        control=20,
+                        value=midi_value
+                    )
+
+                    self.midi_port.send(message)
+                    self.last_midi_value = midi_value
 
             # Draw connections
             for start_index, end_index in HAND_CONNECTIONS:
@@ -335,6 +375,22 @@ class HandTuneWindow(QMainWindow):
 
             self.autotune_bar.setValue(new_value)
 
+            midi_value = round((new_value / 100) * 127)
+
+            if (
+                self.midi_port is not None
+                and midi_value != self.last_midi_value
+            ):
+                message = mido.Message(
+                    "control_change",
+                    channel=0,
+                    control=20,
+                    value=midi_value
+                )
+
+                self.midi_port.send(message)
+                self.last_midi_value = midi_value
+
         # -------------------------
         # Display frame in Qt
         # -------------------------
@@ -367,6 +423,23 @@ class HandTuneWindow(QMainWindow):
 
         self.camera_label.setPixmap(pixmap)
 
+    def choose_song(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Choose Instrumental",
+            "",
+            "Audio Files (*.wav)"
+        )
+
+        if not file_path:
+            return
+
+        print(f"Selected song: {file_path}")
+
+        file_name = file_path.split("/")[-1]
+
+        self.song_name.setText(file_name)
+
     def closeEvent(self, event):
         self.camera_timer.stop()
 
@@ -374,6 +447,9 @@ class HandTuneWindow(QMainWindow):
             self.camera.release()
 
         self.landmarker.close()
+
+        if self.midi_port is not None:
+            self.midi_port.close()
 
         event.accept()
 
