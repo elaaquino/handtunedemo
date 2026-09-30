@@ -252,6 +252,30 @@ class HandTuneWindow(QMainWindow):
 
             self.last_seen[hand_label] = time.time()
 
+            openness = calculate_hand_openness(hand_landmarks)
+
+            if hand_label not in self.smoothed_openness:
+                self.smoothed_openness[hand_label] = openness
+
+            smoothing = 0.15
+
+            self.smoothed_openness[hand_label] = (
+                self.smoothed_openness[hand_label] * (1 - smoothing)
+                + openness * smoothing
+            )
+
+            smooth_value = self.smoothed_openness[hand_label]
+
+            if hand_label == "Left":
+                self.instrumental_bar.setValue(
+                    round(smooth_value * 100)
+                )
+
+            elif hand_label == "Right":
+                self.autotune_bar.setValue(
+                    round(smooth_value * 100)
+                )
+
             # Draw connections
             for start_index, end_index in HAND_CONNECTIONS:
                 start = hand_landmarks[start_index]
@@ -287,6 +311,29 @@ class HandTuneWindow(QMainWindow):
                     (0, 255, 0),
                     -1
                 )
+
+        current_time = time.time()
+
+        if current_time - self.last_seen["Left"] > 0.4:
+            current_value = self.instrumental_bar.value()
+
+            new_value = round(current_value * 0.9)
+
+            if new_value < 1:
+                new_value = 0
+
+            self.instrumental_bar.setValue(new_value)
+
+
+        if current_time - self.last_seen["Right"] > 0.4:
+            current_value = self.autotune_bar.value()
+
+            new_value = round(current_value * 0.9)
+
+            if new_value < 1:
+                new_value = 0
+
+            self.autotune_bar.setValue(new_value)
 
         # -------------------------
         # Display frame in Qt
