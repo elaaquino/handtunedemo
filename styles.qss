@@ -1,0 +1,44 @@
+QMainWindow {
+    background-color: #10131B;
+}
+
+QWidget {
+    color: #E8ECF4;
+    font-family: "Segoe UI";
+    font-size: 13px;
+}
+
+QLabel {
+    background: transparent;
+}
+
+QPushButton {
+    background-color: #343A49;
+    border: 1px solid #464D5C;
+    border-radius: 9px;
+    padding: 11px 16px;
+    font-weight: 600;
+}
+
+QPushButton:hover {
+    background-color: #454D60;
+    border-color: #A78BFA;
+}
+
+QPushButton:pressed {
+    background-color: #555E74;
+}
+
+QProgressBar {
+    background-color: #343A49;
+    border: none;
+    border-radius: 5px;
+    height: 10px;
+    text-align: right;
+    color: #E8ECF4;
+}
+
+QProgressBar::chunk {
+    background-color: #A78BFA;
+    border-radius: 5px;
+}

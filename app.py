@@ -548,6 +548,9 @@ class HandTuneWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
+    with open("styles.qss", "r", encoding="utf-8") as file:
+        app.setStyleSheet(file.read())
+
     window = HandTuneWindow()
     window.show()
 
