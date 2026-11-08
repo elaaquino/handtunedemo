@@ -12,7 +12,7 @@ import sounddevice as sd
 import numpy as np
 
 from PySide6.QtCore import QTimer, Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtGui import QImage, QPixmap, QPainter, QPainterPath
 
 from PySide6.QtWidgets import (
     QApplication,
@@ -138,6 +138,7 @@ class HandTuneWindow(QMainWindow):
         camera_section = QVBoxLayout()
 
         self.camera_label = QLabel("CAMERA FEED")
+        self.camera_label.setObjectName("cameraFeed")
         self.camera_label.setMinimumSize(650, 450)
         self.camera_label.setAlignment(Qt.AlignCenter)
 
@@ -437,13 +438,39 @@ class HandTuneWindow(QMainWindow):
 
         pixmap = QPixmap.fromImage(qt_image)
 
+        # Scale webcam to fit the label, leaving room for the border
+        target_size = self.camera_label.contentsRect().size()
+
         pixmap = pixmap.scaled(
-            self.camera_label.size(),
+            target_size,
             Qt.KeepAspectRatio,
             Qt.SmoothTransformation
         )
 
-        self.camera_label.setPixmap(pixmap)
+        # Create a transparent image for rounded clipping
+        rounded_pixmap = QPixmap(pixmap.size())
+        rounded_pixmap.fill(Qt.transparent)
+
+        painter = QPainter(rounded_pixmap)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Define the rounded rectangle
+        path = QPainterPath()
+        path.addRoundedRect(
+            0,
+            0,
+            pixmap.width(),
+            pixmap.height(),
+            12,
+            12
+        )
+
+        # Clip webcam image to rounded shape
+        painter.setClipPath(path)
+        painter.drawPixmap(0, 0, pixmap)
+        painter.end()
+
+        self.camera_label.setPixmap(rounded_pixmap)
 
     def choose_song(self):
         file_path, _ = QFileDialog.getOpenFileName(
