@@ -4,12 +4,36 @@ QMainWindow {
 
 QWidget {
     color: #E8ECF4;
-    font-family: "Segoe UI";
+    font-family: "Inter";
     font-size: 13px;
 }
 
 QLabel {
     background: transparent;
+}
+
+/* Main application title */
+QLabel#appTitle {
+    font-family: "Space Grotesk";
+    font-size: 38px;
+    font-weight: 700;
+    color: #F5F3FF;
+}
+
+/* Subtitle below HANDTUNE */
+QLabel#appSubtitle {
+    font-family: "Inter";
+    font-size: 12px;
+    font-weight: 500;
+    color: #A78BFA;
+}
+
+/* Section headings */
+QLabel#sectionTitle {
+    font-family: "Space Grotesk";
+    font-size: 16px;
+    font-weight: 600;
+    color: #FFFFFF;
 }
 
 QPushButton {

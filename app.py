@@ -114,11 +114,17 @@ class HandTuneWindow(QMainWindow):
 
         title_section = QVBoxLayout()
 
-        title = QLabel("HANDTUNE")
-        subtitle = QLabel("Gesture-Controlled Live Audio")
+        self.title_label = QLabel("HANDTUNE")
+        self.title_label.setObjectName("appTitle")
+        self.title_label.setMinimumHeight(55)
 
-        title_section.addWidget(title)
-        title_section.addWidget(subtitle)
+        self.subtitle_label = QLabel(
+            "GESTURE-CONTROLLED AUDIO STUDIO"
+        )
+        self.subtitle_label.setObjectName("appSubtitle")
+
+        header_layout.addWidget(self.title_label)
+        header_layout.addWidget(self.subtitle_label)
 
         status = QLabel("● READY")
 
